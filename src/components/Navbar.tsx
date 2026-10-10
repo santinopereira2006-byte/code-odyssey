@@ -3,7 +3,7 @@ import { event, navLinks } from '../event.config';
 import Logo from './Logo';
 import RegisterButton from './RegisterButton';
 
-export default function Navbar() {
+export default function Navbar({ visible = true }: { visible?: boolean }) {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
 
@@ -24,10 +24,10 @@ export default function Navbar() {
   const close = () => setOpen(false);
 
   return (
-    <header className={`nav ${scrolled || open ? 'is-scrolled' : ''} ${open ? 'is-open' : ''}`}>
+    <header className={`nav ${scrolled || open ? 'is-scrolled' : ''} ${open ? 'is-open' : ''} ${visible ? '' : 'is-hidden'}`}>
       <div className="nav__inner">
         <a href="#home" className="nav__brand" onClick={close}>
-          <Logo size={34} />
+          <Logo size={32} />
           <span className="nav__wordmark">
             {event.name} <em>{event.edition}</em>
           </span>

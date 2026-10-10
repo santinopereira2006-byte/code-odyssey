@@ -1,10 +1,14 @@
 import { event } from '../event.config';
 
-/** The supplied CSI logo, cropped to its circular emblem (no redraw, proportions kept). */
+/** CSI emblem (cut from the supplied CSI KJSIT logo onto a transparent background). */
 export default function Logo({ size = 40 }: { size?: number }) {
   return (
-    <span className="csi-logo" style={{ width: size, height: size }}>
-      <img src={event.organizer.logo} alt={`${event.organizer.name} logo`} width={700} height={400} />
-    </span>
+    <img
+      className="csi-logo"
+      src={event.organizer.logo}
+      alt={`${event.organizer.name} logo`}
+      width={size}
+      height={size}
+    />
   );
 }
