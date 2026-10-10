@@ -1,8 +1,8 @@
 import { event, navLinks } from '../event.config';
 import Logo from './Logo';
+import PoweredBy from './PoweredBy';
 
 export default function Footer() {
-  const { email, phone } = event.contact;
   return (
     <footer className="footer">
       <div className="footer__inner">
@@ -18,17 +18,14 @@ export default function Footer() {
             {navLinks.map((l) => <li key={l.href}><a href={l.href}>{l.label}</a></li>)}
           </ul>
         </nav>
-        {(email || phone || event.social.length > 0) && (
-          <div className="footer__contact">
-            {email && <a href={`mailto:${email}`}>{email}</a>}
-            {phone && <a href={`tel:${phone}`}>{phone}</a>}
-            {event.social.map((s) => (
-              <a key={s.url} href={s.url} target="_blank" rel="noopener noreferrer">{s.label}</a>
-            ))}
-          </div>
-        )}
+        <PoweredBy />
       </div>
-      <p className="footer__legal">© {new Date().getFullYear()} {event.organizer.name}. All rights reserved.</p>
+      <p className="footer__legal">
+        © {new Date().getFullYear()} {event.organizer.name}
+        {event.social.map((s) => (
+          <span key={s.url}> · <a href={s.url} target="_blank" rel="noopener noreferrer">{s.handle}</a></span>
+        ))}
+      </p>
     </footer>
   );
 }

@@ -5,7 +5,7 @@ export default function Faq() {
   return (
     <section id="faq" className="section faq">
       <header className="section__head" data-reveal>
-        <p className="eyebrow">Chapter V — Questions</p>
+        <p className="eyebrow">Chapter VII — Questions</p>
         <h2>Before You Set Sail</h2>
       </header>
       <div className="faq__list" data-reveal>

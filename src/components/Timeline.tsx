@@ -1,6 +1,9 @@
 import { useLayoutEffect, useRef, useState } from 'react';
 import { gsap } from 'gsap';
+import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { event, MAP_SIZE } from '../event.config';
+
+gsap.registerPlugin(ScrollTrigger);
 
 const { width: W, height: H } = MAP_SIZE;
 const ROMAN = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII', 'IX', 'X', 'XI', 'XII', 'XIII', 'XIV', 'XV'];
@@ -57,14 +60,14 @@ export default function Timeline() {
   return (
     <section id="timeline" className="section voyage" ref={root}>
       <header className="section__head" data-reveal>
-        <p className="eyebrow">Chapter II — The Timeline</p>
+        <p className="eyebrow">Chapter III — The Timeline</p>
         <h2>The Voyage Ahead</h2>
         <p className="lede">Every milestone brings us closer to the final destination.</p>
       </header>
 
       <div className="voyage__scroller" tabIndex={0} aria-label="Voyage map — scroll sideways on small screens">
         <div className="voyage__map">
-          <img src="/assets/odyssey-map.webp" alt="Illustrated map of Odysseus' ten-year voyage across the Mediterranean" width={W} height={H} loading="lazy" />
+          <img src="assets/odyssey-map.webp" alt="Illustrated map of Odysseus' ten-year voyage across the Mediterranean" width={W} height={H} loading="lazy" />
           <svg className="voyage__route" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" aria-hidden="true">
             <defs>
               <mask id="route-mask">

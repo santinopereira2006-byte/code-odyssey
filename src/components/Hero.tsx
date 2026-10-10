@@ -1,13 +1,10 @@
-import { useLayoutEffect, useRef, type CSSProperties } from 'react';
+import { useLayoutEffect, useRef, useState, type CSSProperties } from 'react';
 import { gsap } from 'gsap';
-import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { event } from '../event.config';
 import {
   BACKPLATE, BREAK_LINE, FRAGMENTS, H, POSTER_WIDE, SEAMS, SHIP_MIST, SHIP_SEA_PATCH, TEXT_PATCHES, W,
   cloneStyle, featherStyle, polygon, rectStyle, type Patch, type Pt,
 } from '../poster';
-
-gsap.registerPlugin(ScrollTrigger);
 
 function PatchView({ p }: { p: Patch }) {
   return (
@@ -18,7 +15,7 @@ function PatchView({ p }: { p: Patch }) {
 }
 
 /** The supplied poster with its film lettering painted out. Reused by every layer. */
-function PosterArt({ onLoad }: { onLoad?: () => void }) {
+export function PosterArt({ onLoad }: { onLoad?: () => void }) {
   return (
     <>
       <img className="poster-img" src={POSTER_WIDE} alt="" onLoad={onLoad} />
@@ -38,34 +35,48 @@ const backplateClip = polygon([
 ]);
 
 /**
- * Pinned, scroll-scrubbed title sequence built only from the supplied poster:
+ * Full-screen loading screen, played once when the page opens. Built only from the supplied poster:
  * 1. camera push while the ship emerges from the mist (bottom first),
  * 2. the helmet splits along its own collage panels and drifts apart,
- * 3. CODE · ODYSSEY · 5.0 · CSI KJSIT surface one by one, 4. hold, release.
+ * 3. CODE · ODYSSEY · 5.0 · Powered by TATA STRIVE surface one by one, 4. hold, then fade out.
  *
- * Without JS or with reduced motion, CSS renders the settled final frame.
+ * With reduced motion it shows the settled final frame briefly. `onDone` fires once the
+ * screen has faded and the page underneath is ready to use.
  */
-export default function Hero() {
-  const root = useRef<HTMLElement>(null);
+export default function Hero({ onDone }: { onDone: () => void }) {
+  const root = useRef<HTMLDivElement>(null);
+  const tlRef = useRef<gsap.core.Timeline | null>(null);
+  const [leaving, setLeaving] = useState(false);
+  const done = useRef(onDone);
+  done.current = onDone;
+  const exitRef = useRef<() => void>(() => {});
 
   useLayoutEffect(() => {
     const mm = gsap.matchMedia();
+    const q = gsap.utils.selector(root);
+    let exited = false;
+    const exit = () => {
+      if (exited) return;
+      exited = true;
+      setLeaving(true);
+      gsap.to(root.current, { autoAlpha: 0, duration: 0.9, ease: 'power2.inOut', onComplete: () => done.current() });
+    };
+
+    exitRef.current = exit;
+
     try {
-      mm.add('(prefers-reduced-motion: no-preference)', () => {
-        const q = gsap.utils.selector(root);
-        const tl = gsap.timeline({
-          defaults: { ease: 'none' },
-          scrollTrigger: {
-            trigger: root.current, start: 'top top', end: '+=520%',
-            pin: true, scrub: 1, invalidateOnRefresh: true,
-          },
-        });
+      mm.add({ motion: '(prefers-reduced-motion: no-preference)', reduce: '(prefers-reduced-motion: reduce)' }, (ctx) => {
+        if (ctx.conditions?.reduce) {
+          const t = gsap.delayedCall(1.6, exit);
+          return () => t.kill();
+        }
+        const tl = gsap.timeline({ defaults: { ease: 'none' }, paused: true, onComplete: exit });
+        tlRef.current = tl;
 
         // Ambient motion across the whole sequence.
         tl.fromTo(q('.hero__sea'), { xPercent: 0, scaleY: 1 }, { xPercent: -0.9, scaleY: 1.035, duration: 11.6 }, 0)
           .fromTo(q('.hero__mist--a'), { xPercent: -5 }, { xPercent: 5, duration: 11.6 }, 0)
-          .fromTo(q('.hero__mist--b'), { xPercent: 4 }, { xPercent: -6, duration: 11.6 }, 0)
-          .fromTo(q('.hero__cue'), { opacity: 1, y: 0 }, { opacity: 0, y: 12, duration: 0.6 }, 0);
+          .fromTo(q('.hero__mist--b'), { xPercent: 4 }, { xPercent: -6, duration: 11.6 }, 0);
 
         // 1 — camera push; the ship emerges from the mist, hull first.
         tl.fromTo(q('.hero__camera'), { scale: 1 }, { scale: 1.1, duration: 3.4, ease: 'power1.inOut' }, 0)
@@ -94,32 +105,41 @@ export default function Hero() {
           .fromTo(q('[data-w="odyssey"]'), hidden, shown, 7.9)
           .fromTo(q('[data-w="edition"]'), hidden, shown, 8.6)
           .fromTo(q('.hero__rule'), { scaleX: 0, opacity: 0 }, { scaleX: 1, opacity: 1, duration: 0.8 }, 9.1)
-          .fromTo(q('.hero__org'), { opacity: 0, y: 12, letterSpacing: '1.1em' },
-            { opacity: 1, y: 0, letterSpacing: '0.55em', duration: 0.9, ease: 'power2.out' }, 9.2)
-          .fromTo(q('.hero__tagline'), { opacity: 0, y: 10, letterSpacing: '0.5em' },
-            { opacity: 1, y: 0, letterSpacing: '0.22em', duration: 0.9, ease: 'power2.out' }, 9.7);
+          .fromTo(q('.hero__powered'), { opacity: 0, y: 14, filter: 'blur(6px)' },
+            { opacity: 1, y: 0, filter: 'blur(0px)', duration: 0.9, ease: 'power2.out' }, 9.2)
+          .fromTo(q('.hero__org'), { opacity: 0, y: 10, letterSpacing: '1.1em' },
+            { opacity: 1, y: 0, letterSpacing: '0.55em', duration: 0.9, ease: 'power2.out' }, 9.7);
 
-        // 4 — hold the final frame before the pin releases.
-        tl.to({}, { duration: 1.2 }, 10.4);
+        // 4 — hold the final frame, then hand over to the page.
+        tl.to({}, { duration: 1.6 }, 10.6);
+
+        // Wait for the poster before playing, so the first frames are not blank.
+        const img = root.current?.querySelector<HTMLImageElement>('.poster-img');
+        const play = () => tl.timeScale(1.75).play();
+        if (!img || img.complete) play();
+        else { img.addEventListener('load', play, { once: true }); img.addEventListener('error', play, { once: true }); }
+        return () => { tlRef.current = null; };
       });
     } catch (err) {
-      console.error('Hero animation disabled:', err); // the static final frame stays usable
+      console.error('Loading animation disabled:', err); // fall back to a short static frame
+      const t = gsap.delayedCall(1.2, exit);
+      return () => { t.kill(); mm.revert(); };
     }
 
-    const refresh = () => ScrollTrigger.refresh();
-    window.addEventListener('load', refresh);
-    return () => {
-      window.removeEventListener('load', refresh);
-      mm.revert();
-    };
+    return () => mm.revert();
   }, []);
 
+  const skip = () => {
+    if (tlRef.current) tlRef.current.progress(1);
+    else exitRef.current();
+  };
+
   return (
-    <section id="home" className="hero" ref={root} aria-label={`${event.name} ${event.edition}`}>
+    <div className={`hero loader ${leaving ? 'is-leaving' : ''}`} ref={root} role="status" aria-label={`Loading ${event.name} ${event.edition}`}>
       <div className="hero__stage">
         <div className="hero__camera">
           <div className="layer">
-            <PosterArt onLoad={() => ScrollTrigger.refresh()} />
+            <PosterArt />
             <div className="ship-veil">
               <PatchView p={SHIP_SEA_PATCH} />
               <div className="ship-veil__mist" style={rectStyle(SHIP_MIST)}>
@@ -158,23 +178,26 @@ export default function Hero() {
         <div className="hero__mist hero__mist--b" aria-hidden="true" />
 
         <div className="hero__brand">
-          <h1 className="hero__title">
+          <p className="hero__title">
             <span className="sr-only">{event.name} {event.edition}</span>
             <span aria-hidden="true" className="hero__words">
               <span data-w="code">CODE</span>
               <span data-w="odyssey">ODYSSEY</span>
               <span data-w="edition" className="hero__edition">{event.edition}</span>
             </span>
-          </h1>
+          </p>
           <span className="hero__rule" aria-hidden="true" />
+          <p className="hero__powered">
+            <img src={event.poweredBy.logo} alt="" width={225} height={225} />
+            <span>Powered by <strong>{event.poweredBy.name}</strong></span>
+          </p>
           <p className="hero__org">{event.organizer.name}</p>
-          <p className="hero__tagline">{event.tagline}</p>
         </div>
       </div>
 
       <div className="hero__grain" aria-hidden="true" />
       <div className="hero__vignette" aria-hidden="true" />
-      <a href="#timeline" className="hero__cue"><span>Scroll</span><i aria-hidden="true" /></a>
-    </section>
+      <button type="button" className="loader__skip" onClick={skip}>Skip intro</button>
+    </div>
   );
 }
