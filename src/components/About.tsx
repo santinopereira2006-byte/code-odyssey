@@ -1,11 +1,11 @@
 import { event } from '../event.config';
+import PoweredBy from './PoweredBy';
 
-// Draft copy — edit freely.
 const reasons = [
-  { title: 'Build', text: 'Turn an idea into something that works, in a single focused stretch of making.' },
-  { title: 'Collaborate', text: 'Sail with a crew — combine skills, divide the work, decide together.' },
-  { title: 'Experiment', text: 'Try the approach you have been curious about. The unknown is the point.' },
-  { title: 'Present', text: 'Stand before judges and peers and make the case for what you built.' },
+  { title: 'Build', text: 'Turn an idea into something that works over two focused days of making.' },
+  { title: 'Collaborate', text: 'Sail with a crew of four: combine skills, divide the work, decide together.' },
+  { title: 'Compete', text: `Contend for a prize pool worth ${event.prizePool}.` },
+  { title: 'Launch', text: `Winners get an opportunity for a ${event.poweredBy.name} internship (T&C applied).` },
 ];
 
 export default function About() {
@@ -13,14 +13,20 @@ export default function About() {
     <section id="about" className="section about">
       <div className="about__grid">
         <div data-reveal>
-          <p className="eyebrow">About the event</p>
-          <h2>A voyage in its fifth edition</h2>
+          <p className="eyebrow">Chapter I — The Call</p>
+          <h2>Welcome to Code Odyssey 5</h2>
         </div>
-        <p className="about__copy" data-reveal>
-          {event.name} is the hackathon organised by {event.organizer.fullName}. Edition {event.edition} takes
-          its course from the oldest story of all: a long journey home through trials no one could plan for.
-          Bring a crew, choose a problem, and find your way through.
-        </p>
+        <div className="about__copy" data-reveal>
+          <p>
+            {event.name} {event.edition} ({event.shortName}) is the hackathon organised by the Computer Society of
+            India (CSI) student chapter of {event.organizer.college} (KJSIT). Its fifth edition takes its course from
+            the oldest story of all: a long journey home through trials no one could plan for.
+          </p>
+          <p>
+            Bring a crew, choose a problem, and find your way through on <strong>17th–18th October</strong>.
+          </p>
+          <PoweredBy />
+        </div>
       </div>
 
       <div className="why" data-reveal>

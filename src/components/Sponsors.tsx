@@ -5,7 +5,7 @@ export default function Sponsors() {
   return (
     <section id="sponsors" className="section sponsors">
       <header className="section__head" data-reveal>
-        <p className="eyebrow">Chapter IV — The Patrons</p>
+        <p className="eyebrow">Chapter VI — The Patrons</p>
         <h2>Those Who Make the Voyage Possible</h2>
       </header>
 
@@ -23,7 +23,7 @@ export default function Sponsors() {
             <h3 className="tier__title">{tier.tier}</h3>
             <ul className="tier__logos">
               {tier.sponsors.map((s) => {
-                const img = <img src={s.logo} alt={s.name} loading="lazy" />;
+                const img = <img src={s.logo} alt={`${s.name} logo`} loading="lazy" />;
                 return (
                   <li key={s.name}>
                     {s.url ? <a href={s.url} target="_blank" rel="noopener noreferrer">{img}</a> : img}

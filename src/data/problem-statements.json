@@ -1,0 +1,13 @@
+{
+  "released": false,
+  "placeholder": "Problem statements yet to be released",
+  "note": "Check back here and on Instagram (@csi_kjsit) for the reveal.",
+  "statements": [
+    {
+      "id": "PS-01",
+      "title": "Example problem statement",
+      "domain": "Example domain",
+      "description": "Replace this entry with a real problem statement, then set \"released\" to true."
+    }
+  ]
+}

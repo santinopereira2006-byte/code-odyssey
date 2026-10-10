@@ -39,10 +39,9 @@ export default function Navbar() {
                 <a href={l.href} onClick={close}>{l.label}</a>
               </li>
             ))}
-            <li className="nav__cta-mobile"><RegisterButton /></li>
           </ul>
         </nav>
-        <RegisterButton className="nav__cta" />
+        <RegisterButton className="btn--gold nav__cta" label="Register now" />
         <button
           className="nav__toggle"
           aria-expanded={open}
