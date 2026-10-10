@@ -3,8 +3,9 @@
  *
  * Edit everything here. Anything set to `null` (or an empty array) is treated
  * as "not yet verified" and is either hidden or shown as "to be announced".
- * Nothing in this file has been confirmed by the organisers yet except the
- * event name and organiser.
+ * Confirmed so far: event name, organiser, the About copy, highlights and
+ * participation guidelines. Still to configure: `registrationUrl` and the
+ * exact `registrationDeadline.date`.
  */
 
 export type MilestoneStatus = 'upcoming' | 'live' | 'completed';
@@ -64,16 +65,46 @@ export const event = {
     logo: 'assets/csi-logo.png',
   },
 
-  /** TODO: set the real registration form URL. Empty = "requires configuration". */
+  /**
+   * Google Form (or other) registration URL. Every "Register" button opens it in a new tab.
+   * TODO: paste the real form link here. While empty, buttons show "registration opening soon".
+   */
   registrationUrl: '',
 
-  /** TODO: fill in once verified. `null` fields are hidden. */
-  details: {
+  /** About / description section. */
+  about: {
+    subtitle: 'A 30-hour offline hackathon by CSI KJSIT.',
+    description: [
+      'Code Odyssey 5.0 is a hackathon organized by the Computer Society of India (CSI) student chapter at K. J. Somaiya Institute of Technology (KJSIT).',
+      'The event brings together teams of students to develop innovative, technology-driven solutions to real-world problem statements through collaboration, creativity, and practical implementation.',
+    ],
+    highlights: [
+      { value: '30', unit: 'Hours', label: 'Offline hackathon' },
+      { value: '₹50,000', unit: null, label: 'Prize pool worth' },
+      { value: '17–18', unit: 'October 2026', label: 'Hackathon dates' },
+      { value: '4', unit: 'Members', label: 'Required team size' },
+    ] as { value: string; unit: string | null; label: string }[],
+  },
+
+  /**
+   * Registration deadline: Saturday, 12:00 AM (midnight).
+   * TODO: set `date` (e.g. '10 October 2026') once confirmed; while null it reads "date to be confirmed".
+   */
+  registrationDeadline: {
+    day: 'Saturday',
+    time: '12:00 AM (midnight)',
     date: null as string | null,
+  },
+
+  instagram: { handle: '@csi_kjsit', url: 'https://www.instagram.com/csi_kjsit/' },
+
+  /** `null` fields are hidden. */
+  details: {
+    date: '17–18 October 2026' as string | null,
     venue: null as string | null,
-    teamSize: null as string | null,
-    eligibility: null as string | null,
-    format: null as string | null,
+    teamSize: 'Exactly 4 members' as string | null,
+    eligibility: 'KJSIT third-year and final-year students' as string | null,
+    format: '30-hour offline hackathon' as string | null,
     registrationDeadline: null as string | null,
   },
 
@@ -131,6 +162,7 @@ export const event = {
 export const MAP_SIZE = { width: 1600, height: 900 };
 
 export const navLinks = [
+  { label: 'About', href: '#about' },
   { label: 'Timeline', href: '#timeline' },
   { label: 'Prizes', href: '#prizes' },
   { label: 'Sponsors', href: '#sponsors' },

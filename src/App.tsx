@@ -1,5 +1,6 @@
 import Navbar from './components/Navbar';
 import Hero from './components/Hero';
+import Description from './components/Description';
 import { event } from './event.config';
 import RegisterButton, { registrationReady } from './components/RegisterButton';
 
@@ -13,10 +14,11 @@ const stubs = [
 export default function App() {
   return (
     <>
-      <a className="skip" href="#timeline">Skip to content</a>
+      <a className="skip" href="#about">Skip to content</a>
       <Navbar />
       <main>
         <Hero />
+        <Description />
         {stubs.map((s) => (
           <section key={s.id} id={s.id} className="stub">
             <p className="eyebrow">{s.eyebrow}</p>
