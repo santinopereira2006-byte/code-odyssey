@@ -2,7 +2,7 @@ import { useLayoutEffect, useRef, type ReactNode } from 'react';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { event } from '../event.config';
-import { POSTER_WIDE, cloneStyle, type Rect } from '../poster';
+import Ocean from './Ocean';
 import RegisterButton, { registrationReady } from './RegisterButton';
 
 gsap.registerPlugin(ScrollTrigger);
@@ -27,15 +27,13 @@ const guidelines: { term: string; text: ReactNode }[] = [
   { term: 'Your details', text: 'Make sure your KJSIT ID proof, Somaiya email address and uploaded resume are accurate.' },
 ];
 
-/** A strip of the poster's open sea — below the title and above the release line, so no film lettering. */
-const SEA_STRIP: Rect = [300, 715, 1000, 125];
-
 const roman = ['I', 'II', 'III', 'IV', 'V', 'VI', 'VII', 'VIII'];
 
 /**
- * The scene after the hero: the camera has sunk into the sea, so this section opens
- * in the same navy the hero ends on. Content is fully visible by default; with motion
- * allowed, each block eases in once as it enters and reverses when scrolled back past.
+ * The scene after the hero, played out on the live ocean (Ocean.tsx): the empty
+ * `desc__voyage` stretch carries the camera over the waves, toward the ship and down
+ * through the surface; the text then arrives underwater. Content is fully visible by
+ * default; with motion allowed, each block eases in once and reverses when scrolled back.
  */
 export default function Description() {
   const root = useRef<HTMLElement>(null);
@@ -78,14 +76,11 @@ export default function Description() {
   }, []);
 
   return (
-    <section id="about" className="desc" ref={root} aria-labelledby="about-title">
-      <div className="desc__atmos" aria-hidden="true">
-        <div className="desc__sea">
-          <img src={POSTER_WIDE} alt="" style={cloneStyle(SEA_STRIP)} />
-        </div>
-      </div>
+    <section className="desc" ref={root} aria-labelledby="about-title">
+      <Ocean />
+      <div className="desc__voyage" aria-hidden="true" />
 
-      <header className="desc__intro">
+      <header className="desc__intro" id="about">
         <p className="eyebrow desc__label">About the Hackathon</p>
         <span className="desc__line" aria-hidden="true" />
         <h2 className="desc__title" id="about-title">

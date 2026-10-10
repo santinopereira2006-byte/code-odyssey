@@ -42,8 +42,8 @@ const backplateClip = polygon([
  * 1. camera push while the ship emerges from the mist (bottom first),
  * 2. the helmet splits along its own collage panels and drifts apart,
  * 3. CODE · ODYSSEY · 5.0 · CSI KJSIT surface one by one,
- * 4. a short hold, then the camera sinks toward the ocean and the frame deepens
- *    into the navy of the About section that follows.
+ * 4. a short hold, then the camera pushes in on the ship as dusk falls and the
+ *    poster dissolves into the live WebGL sea of the About section.
  *
  * Timeline units are relative: the whole sequence is stretched over `end` of scroll,
  * so pacing is tuned here and overall speed via SCROLL_DESKTOP / SCROLL_MOBILE.
@@ -69,7 +69,7 @@ export default function Hero() {
         const tl = gsap.timeline({
           defaults: { ease: 'none' },
           scrollTrigger: {
-            trigger: root.current, start: 'top top', end: mobile ? SCROLL_MOBILE : SCROLL_DESKTOP,
+            id: 'hero', trigger: root.current, start: 'top top', end: mobile ? SCROLL_MOBILE : SCROLL_DESKTOP,
             pin: true, scrub: 0.6, invalidateOnRefresh: true,
           },
         });
@@ -116,12 +116,14 @@ export default function Hero() {
           .fromTo(q('.hero__tagline'), { opacity: 0, y: 10, letterSpacing: '0.5em' },
             { opacity: 1, y: 0, letterSpacing: '0.22em', duration: 0.7, ease: 'power2.out' }, ID + 1.7);
 
-        // 4 — hold the title frame (ID + 2.4 → 7.4), then sink toward the sea and deepen to navy.
+        // 4 — hold the title frame (ID + 2.4 → 7.4), then push in on the ship as dusk falls,
+        //     and dissolve into the live sea (Ocean.tsx), whose first frame matches this one.
         const OUT = 7.4;
-        tl.to(q('.hero__camera'), { scale: 1.2, yPercent: -9, duration: TOTAL - OUT, ease: 'power2.in' }, OUT)
+        const ocean = document.querySelector('.ocean');
+        tl.to(q('.hero__camera'), { scale: 1.45, yPercent: -4.5, duration: TOTAL - OUT, ease: 'power1.in' }, OUT)
           .to(q('.hero__brand'), { opacity: 0, yPercent: -40, duration: 1.1, ease: 'power1.in' }, OUT)
-          .fromTo(q('.hero__tint'), { opacity: 0 }, { opacity: 0.85, duration: 1.4, ease: 'power1.inOut' }, OUT)
-          .fromTo(q('.hero__deep'), { opacity: 0, yPercent: 35 }, { opacity: 1, yPercent: 0, duration: 1.6, ease: 'power1.inOut' }, OUT + 0.8);
+          .fromTo(q('.hero__tint'), { opacity: 0 }, { opacity: 0.5, duration: TOTAL - OUT, ease: 'power1.in' }, OUT);
+        if (ocean) tl.fromTo(ocean, { opacity: 0 }, { opacity: 1, duration: 1.3, ease: 'power1.inOut' }, TOTAL - 1.3);
       });
     } catch (err) {
       console.error('Hero animation disabled:', err); // the static title frame stays usable
