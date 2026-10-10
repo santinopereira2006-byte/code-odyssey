@@ -1,8 +1,10 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, type PointerEvent } from 'react';
 import { gsap } from 'gsap';
 import { ScrollTrigger } from 'gsap/ScrollTrigger';
 import { event } from '../event.config';
-import { OceanScene, pickArt } from '../scene/OceanScene';
+import { ART, pickArt } from '../scene/OceanScene';
+import { rig } from '../scene/rig';
+import { scrollToHash } from '../lib/scroll';
 import RegisterButton from './RegisterButton';
 import Countdown from './home/Countdown';
 
@@ -12,113 +14,105 @@ interface Props {
   /** Starts the camera move — fired as the loader opens. */
   play: boolean;
   reducedMotion: boolean;
-  onReady: () => void;
 }
 
 const WORDS = event.name.split(' ');
 
+/** Points of interest pinned to the artwork itself (image uv per art profile). */
+const HOTSPOTS = [
+  { id: 'ship', href: '#voyage', depth: 0.3, uv: { wide: [0.39, 0.3], tall: [0.2, 0.31] },
+    kicker: 'The Voyage', title: '17 — 18 October', body: 'Two days at sea. Follow the course from registration to the hackathon.' },
+  { id: 'helmet', href: '#about', depth: 0.95, uv: { wide: [0.5, 0.355], tall: [0.5, 0.36] },
+    kicker: 'The Call', title: `${event.prizePool} prize pool`, body: 'Winners also get a shot at a TATA STRIVE internship.' },
+  { id: 'sea', href: '#rules', depth: 0.55, uv: { wide: [0.8, 0.43], tall: [0.76, 0.43] },
+    kicker: 'Rules of the Sea', title: 'Crews of four', body: 'KJSIT TY & LY only, with at least one female crew member.' },
+] as const;
+
 /**
- * Pinned opening shot built on the supplied key art (public/assets/odyssey-bg-*.jpg).
- * Intro (time-based): the frame opens on the waterline in close-up, then the camera
- * dollies back and settles to reveal helmet, hull and the red-sailed ship.
- * Scroll (scrubbed): the camera sinks beneath the surface, past the hull and into the abyss.
+ * Pinned opening shot. The WebGL ocean lives in <OceanStage>; the hero directs its camera:
+ * Intro (time-based): the frame opens on the waterline in close-up, racks focus to the helmet
+ * and dollies back to reveal helmet, hull and the red-sailed ship.
+ * Scroll (scrubbed): letterbox in, the camera sinks beneath the surface, past the hull, into the abyss.
  */
-export default function Hero({ play, reducedMotion, onReady }: Props) {
+export default function Hero({ play, reducedMotion }: Props) {
   const root = useRef<HTMLElement>(null);
-  const canvas = useRef<HTMLCanvasElement>(null);
-  const scene = useRef<OceanScene | null>(null);
-  const [fallback, setFallback] = useState(false);
-  const [fallbackSrc, setFallbackSrc] = useState(() => pickArt(window.innerWidth, window.innerHeight).src);
-  // Camera = intro pose (time-based) composed with the scroll pose (scrubbed).
-  const intro = useRef({ camY: -0.04, zoom: 1.85, roll: 0.045, exposure: 0 });
-  const scroll = useRef({ camY: 0, zoom: 1, dive: 0 });
-  const onReadyRef = useRef(onReady);
-  onReadyRef.current = onReady;
+  const spots = useRef<(HTMLAnchorElement | null)[]>([]);
+  const lastRipple = useRef({ t: 0, x: 0, y: 0 });
 
-  // ---- Scene lifecycle --------------------------------------------------------
+  // ---- Hotspots follow the camera; the title block floats with the pointer ---------
   useEffect(() => {
-    const el = canvas.current!;
-    let s: OceanScene;
-    try {
-      s = new OceanScene(el, !reducedMotion);
-    } catch (err) {
-      console.warn('WebGL scene unavailable, using the still image.', err);
-      setFallback(true);
-      const img = new Image();
-      img.onload = img.onerror = () => onReadyRef.current();
-      img.src = fallbackSrc;
-      return;
-    }
-    scene.current = s;
-    s.resize();
-    s.load(pickArt(window.innerWidth, window.innerHeight)).then(() => onReadyRef.current(), () => onReadyRef.current());
+    const words = root.current!.querySelector('.hero__words');
+    const copy = root.current!.querySelector('.hero__copy');
+    gsap.set(words, { transformPerspective: 1100 });
+    const tiltX = gsap.quickTo(words, 'rotationY', { duration: 1.2, ease: 'power3.out' });
+    const tiltY = gsap.quickTo(words, 'rotationX', { duration: 1.2, ease: 'power3.out' });
+    const shift = gsap.quickTo(copy, 'x', { duration: 1.4, ease: 'power3.out' });
 
-    const compose = () => {
-      const st = s.state, a = intro.current, b = scroll.current;
-      st.camY = a.camY + b.camY;
-      st.zoom = a.zoom * b.zoom;
-      st.roll = a.roll;
-      st.exposure = a.exposure;
-      st.dive = b.dive;
+    const tick = () => {
+      const s = rig.scene;
+      const key = pickArt(window.innerWidth, window.innerHeight) === ART.tall ? 'tall' : 'wide';
+      const vis = Math.max(0, 1 - rig.scroll.dive * 12);
+      HOTSPOTS.forEach((h, i) => {
+        const el = spots.current[i];
+        if (!el) return;
+        const [u, v] = h.uv[key];
+        const [x, y] = s ? s.imageToScreen(u, v, h.depth) : [u, v];
+        el.style.transform = `translate3d(${(x * window.innerWidth).toFixed(1)}px, ${(y * window.innerHeight).toFixed(1)}px, 0)`;
+        el.style.setProperty('--vis', vis.toFixed(3));
+        el.classList.toggle('is-flipped', x > 0.62);
+        el.tabIndex = vis > 0.5 ? 0 : -1;
+      });
     };
-    gsap.ticker.add(compose);
+    gsap.ticker.add(tick);
 
-    const onResize = () => {
-      s.resize();
-      s.load(pickArt(window.innerWidth, window.innerHeight));
+    const onMove = (e: globalThis.PointerEvent) => {
+      if (e.pointerType !== 'mouse' || reducedMotion || rig.scroll.dive > 0.2) return;
+      const nx = e.clientX / window.innerWidth - 0.5;
+      const ny = e.clientY / window.innerHeight - 0.5;
+      tiltX(nx * 9);
+      tiltY(-ny * 6);
+      shift(-nx * 18);
     };
-    window.addEventListener('resize', onResize);
-
-    // Only render while the stage (including its pinned scroll distance) is on screen and the tab is visible.
-    const sync = () => {
-      const box = (root.current?.parentElement ?? el).getBoundingClientRect();
-      if (box.bottom > 0 && !document.hidden) s.play(); else s.pause();
-    };
-    sync();
-    window.addEventListener('scroll', sync, { passive: true });
-    document.addEventListener('visibilitychange', sync);
-
+    window.addEventListener('pointermove', onMove, { passive: true });
     return () => {
-      gsap.ticker.remove(compose);
-      window.removeEventListener('resize', onResize);
-      window.removeEventListener('scroll', sync);
-      document.removeEventListener('visibilitychange', sync);
-      s.destroy();
-      scene.current = null;
+      gsap.ticker.remove(tick);
+      window.removeEventListener('pointermove', onMove);
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reducedMotion]);
-
-  useEffect(() => {
-    if (!fallback) return;
-    const onResize = () => setFallbackSrc(pickArt(window.innerWidth, window.innerHeight).src);
-    window.addEventListener('resize', onResize);
-    return () => window.removeEventListener('resize', onResize);
-  }, [fallback]);
 
   // ---- Scroll: the descent ------------------------------------------------------
   useLayoutEffect(() => {
     const q = gsap.utils.selector(root);
     const ctx = gsap.context(() => {
+      const cam = rig.scroll;
       const tl = gsap.timeline({
         defaults: { ease: 'none' },
         scrollTrigger: {
-          trigger: root.current, start: 'top top', end: '+=230%',
-          pin: true, scrub: 1.2, invalidateOnRefresh: true,
+          trigger: root.current, start: 'top top', end: '+=240%',
+          pin: true, scrub: 1.4, invalidateOnRefresh: true,
         },
       });
-      tl.to(scroll.current, { camY: 0.5, zoom: 1.24, duration: 1, ease: 'power1.inOut' }, 0)
-        .to(scroll.current, { dive: 1, duration: 0.9, ease: 'power1.in' }, 0.1)
-        .to(q('.hero__copy'), { yPercent: -35, opacity: 0, filter: 'blur(10px)', duration: 0.24, ease: 'power1.in' }, 0)
-        .to(q('.hero__meta'), { y: 40, opacity: 0, duration: 0.16, ease: 'power1.in' }, 0)
+      tl.to(cam, { camY: 0.5, zoom: 1.24, duration: 1, ease: 'power2.inOut' }, 0)
+        .to(cam, { dive: 1, duration: 0.9, ease: 'power1.in' }, 0.1)
+        .to(cam, { focus: 0.95, glow: 1, duration: 0.5 }, 0.05)
+        .to(cam, { lantern: 1, duration: 0.3 }, 0.2)
+        .fromTo(q('.hero__bar'), { scaleY: 0 }, { scaleY: 1, duration: 0.18, ease: 'power2.out' }, 0.04)
+        .to(q('.hero__bar'), { scaleY: 0, duration: 0.14, ease: 'power2.in' }, 0.86)
+        .to(q('.hero__copy'), { yPercent: -40, opacity: 0, filter: 'blur(12px)', duration: 0.24, ease: 'power1.in' }, 0)
+        .to(q('.hero__by, .hero__edition'), { letterSpacing: '1.2em', duration: 0.24, ease: 'power1.in' }, 0)
+        .to(q('.hero__meta'), { y: 50, opacity: 0, duration: 0.16, ease: 'power1.in' }, 0)
         .to(q('.hero__cue'), { opacity: 0, duration: 0.06 }, 0)
-        .fromTo(q('.hero__abyss'), { opacity: 0 }, { opacity: 1, duration: 0.25, ease: 'power1.in' }, 0.75);
+        .fromTo(q('.hero__depth'), { opacity: 0 }, { opacity: 1, duration: 0.1 }, 0.18)
+        .to(q('.hero__depth'), { opacity: 0, duration: 0.08 }, 0.9);
 
       q('.hero__chapter').forEach((el, i) => {
-        const at = 0.34 + i * 0.32;
-        tl.fromTo(el, { opacity: 0, y: 50, filter: 'blur(12px)' }, { opacity: 1, y: 0, filter: 'blur(0px)', duration: 0.12, ease: 'power2.out' }, at)
-          .fromTo(el.querySelector('.hero__chapter-line'), { letterSpacing: '0.9em' }, { letterSpacing: '0.34em', duration: 0.22, ease: 'power2.out' }, at)
-          .to(el, { opacity: 0, y: -50, filter: 'blur(12px)', duration: 0.1, ease: 'power2.in' }, at + 0.2);
+        const at = 0.32 + i * 0.3;
+        const line = el.querySelector('.hero__chapter-line');
+        const kicker = el.querySelector('.hero__chapter-kicker');
+        tl.fromTo(el, { opacity: 0, y: 60, filter: 'blur(14px)' }, { opacity: 1, y: 0, filter: 'blur(0px)', duration: 0.12, ease: 'power3.out' }, at)
+          .fromTo(line, { letterSpacing: '0.9em', scale: 1.08 }, { letterSpacing: '0.3em', scale: 1, duration: 0.24, ease: 'power2.out' }, at)
+          .fromTo(kicker, { clipPath: 'inset(0 50% 0 50%)' }, { clipPath: 'inset(0 0% 0 0%)', duration: 0.12, ease: 'power2.out' }, at + 0.02)
+          .to(el, { opacity: 0, y: -60, filter: 'blur(14px)', duration: 0.1, ease: 'power2.in' }, at + 0.2);
       });
     }, root);
     return () => ctx.revert();
@@ -128,18 +122,21 @@ export default function Hero({ play, reducedMotion, onReady }: Props) {
   useLayoutEffect(() => {
     if (!play) return;
     const q = gsap.utils.selector(root);
+    const a = rig.intro;
     const ctx = gsap.context(() => {
-      const a = intro.current;
       if (reducedMotion) {
-        Object.assign(a, { camY: 0, zoom: 1, roll: 0 });
+        Object.assign(a, { camY: 0, zoom: 1, roll: 0, dof: 0, focus: 0.95 });
         gsap.to(a, { exposure: 1, duration: 0.8 });
-        gsap.from(q('.hero__copy, .hero__meta, .hero__cue'), { opacity: 0, duration: 0.8, delay: 0.2 });
+        gsap.from(q('.hero__copy, .hero__meta, .hero__cue, .hotspot'), { opacity: 0, duration: 0.8, delay: 0.2 });
         return;
       }
       gsap.timeline()
-        .to(a, { exposure: 1, duration: 1.2, ease: 'power1.out' }, 0)
-        .to(a, { zoom: 1, camY: 0, duration: 4.2, ease: 'power3.inOut' }, 0)
-        .to(a, { roll: 0, duration: 4.6, ease: 'power2.out' }, 0)
+        .to(a, { exposure: 1, duration: 1.4, ease: 'power1.out' }, 0)
+        .to(a, { zoom: 1, camY: 0, duration: 4.4, ease: 'power3.inOut' }, 0)
+        .to(a, { roll: 0, duration: 4.8, ease: 'power2.out' }, 0)
+        // rack focus: from the waterline to the helmet, then the lens settles
+        .to(a, { focus: 0.95, duration: 1.8, ease: 'power2.inOut' }, 0.5)
+        .to(a, { dof: 0, duration: 2.6, ease: 'power2.inOut' }, 1.6)
         .from(q('.hero__by'), { opacity: 0, y: 16, letterSpacing: '0.9em', duration: 1.4, ease: 'power3.out' }, 2.3)
         .from(q('.hero__char'), {
           opacity: 0, rotateX: -95, z: -260, y: 40, filter: 'blur(10px)',
@@ -149,18 +146,59 @@ export default function Hero({ play, reducedMotion, onReady }: Props) {
         .from(q('.hero__edition'), { opacity: 0, scale: 1.6, filter: 'blur(14px)', duration: 1.4, ease: 'expo.out' }, 3.2)
         .from(q('.hero__rule'), { scaleX: 0, duration: 1.2, ease: 'expo.inOut' }, 3.3)
         .from(q('.hero__meta > *'), { opacity: 0, y: 24, duration: 1, ease: 'power3.out', stagger: 0.12 }, 3.6)
+        .from(q('.hotspot__inner'), { opacity: 0, scale: 0.2, duration: 0.9, ease: 'back.out(2.2)', stagger: 0.18 }, 4.2)
         .from(q('.hero__cue'), { opacity: 0, duration: 1 }, 4.4);
     }, root);
     return () => ctx.revert();
   }, [play, reducedMotion]);
 
+  // A touch on the water sends a ripple; a sweep of the mouse leaves a faint wake.
+  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    if ((e.target as HTMLElement).closest('a, button')) return;
+    rig.scene?.ripple(e.clientX, e.clientY, 1);
+  };
+  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
+    if (e.pointerType !== 'mouse') return;
+    const l = lastRipple.current;
+    const now = performance.now();
+    if (now - l.t > 380 && Math.hypot(e.clientX - l.x, e.clientY - l.y) > 60) {
+      rig.scene?.ripple(e.clientX, e.clientY, 0.35);
+      Object.assign(l, { t: now, x: e.clientX, y: e.clientY });
+    }
+  };
+
   return (
     <section id="home" className={`hero ${play ? 'is-playing' : ''}`} ref={root} aria-label={`${event.name} ${event.edition}`}>
-      <div className="hero__stage">
-        <canvas ref={canvas} className="hero__canvas" aria-hidden="true" hidden={fallback} />
-        {fallback && <img className="hero__fallback" src={fallbackSrc} alt="" />}
+      <div className="hero__stage" onPointerDown={onPointerDown} onPointerMove={onPointerMove}>
         <div className="hero__shade" aria-hidden="true" />
-        <div className="hero__abyss" aria-hidden="true" />
+        <span className="hero__bar hero__bar--top" aria-hidden="true" />
+        <span className="hero__bar hero__bar--bottom" aria-hidden="true" />
+
+        <nav className="hotspots" aria-label="Explore the scene">
+          {HOTSPOTS.map((h, i) => (
+            <a
+              key={h.id}
+              ref={(el) => { spots.current[i] = el; }}
+              className="hotspot"
+              href={h.href}
+              data-cursor="Explore"
+              onClick={(e) => {
+                e.preventDefault();
+                rig.scene?.ripple(e.clientX, e.clientY, 1.4);
+                scrollToHash(h.href);
+              }}
+            >
+              <span className="hotspot__inner">
+                <span className="hotspot__dot" aria-hidden="true" />
+                <span className="hotspot__card">
+                  <span className="hotspot__kicker">{h.kicker}</span>
+                  <span className="hotspot__title">{h.title}</span>
+                  <span className="hotspot__body">{h.body}</span>
+                </span>
+              </span>
+            </a>
+          ))}
+        </nav>
 
         <div className="hero__copy">
           <p className="hero__by">A Hackathon by <b>{event.organizer.name}</b></p>
@@ -197,8 +235,9 @@ export default function Hero({ play, reducedMotion, onReady }: Props) {
           <span className="hero__chapter-kicker">Into the deep</span>
           <span className="hero__chapter-line">Two days. Four crew. One odyssey.</span>
         </p>
+        <p className="hero__depth" aria-hidden="true"><span className="on-fine">Move your cursor to light the deep</span><span className="on-coarse">Touch the water to light the deep</span></p>
 
-        <a href="#about" className="hero__cue"><span>Scroll to dive</span><i aria-hidden="true" /></a>
+        <a href="#about" className="hero__cue" data-cursor="Dive"><span>Scroll to dive</span><i aria-hidden="true" /></a>
       </div>
     </section>
   );

@@ -1,14 +1,15 @@
 import { event } from '../../event.config';
 import RegisterButton, { registrationReady } from '../RegisterButton';
 import Countdown from './Countdown';
+import Hud from './Hud';
 
 export default function SetSail() {
   return (
     <section id="register" className="section sail">
       <div className="sail__glow" aria-hidden="true" />
-      <p className="eyebrow" data-reveal>{event.name} {event.edition}</p>
-      <h2 className="sail__title" data-reveal data-track>Set Sail</h2>
-      <p className="lede" data-reveal>
+      <Hud index="Chapter IV" name={`${event.name} ${event.edition}`} depth="Surface" />
+      <h2 className="sail__title" data-split>Set Sail</h2>
+      <p className="lede" data-lines>
         Assemble your crew of four, check your KJSIT ID proofs, Somaiya email addresses and resumes —
         and register before Saturday, 12:00 AM.
       </p>

@@ -7,7 +7,11 @@
  *  - shimmering surface water, refraction below the waterline, moving caustics,
  *    swaying god-rays, a glinting waterline and drifting sea fog,
  *  - a perspective particle field (plankton, bokeh, bubbles) that only lives underwater,
- *  - a seamless descent past the bottom of the artwork into the abyss.
+ *  - a seamless descent past the bottom of the artwork into the abyss,
+ *  - lens work: rack-focus depth of field, subtle chromatic fringing, a breathing
+ *    glow on the golden spine (from a bloom mask baked from the art's own gold pixels),
+ *  - interaction: an underwater lantern that follows the pointer, click ripples on the
+ *    water, scroll-velocity driven currents, and image→screen mapping for hotspots.
  *
  * The scene is imperative; React/GSAP only write to `scene.state`.
  */
@@ -47,6 +51,12 @@ export interface SceneState {
   dive: number;
   /** Pointer in -1…1, already smoothed by the scene. */
   pointerX: number; pointerY: number;
+  /** Depth (0 far … 1 near) the lens is focused on, and how strong the blur is. */
+  focus: number; dof: number;
+  /** 0 → 1: strength of the pointer lantern and of the spine glow. */
+  lantern: number; glow: number;
+  /** Scroll velocity in viewport heights per second (signed). */
+  velocity: number;
 }
 
 const VERT_QUAD = `
@@ -74,6 +84,13 @@ uniform float uHorizon;
 uniform vec4 uObjA;
 uniform vec3 uObjB;
 uniform float uMotion;      // 0 when reduced motion is requested
+uniform sampler2D uBloom;   // blurred mask of the gold vertebrae
+uniform float uFocus;
+uniform float uDof;
+uniform vec3 uLantern;      // screen uv (y from top) + intensity
+uniform float uGlow;
+uniform float uFlow;        // 0..1 scroll-velocity energy
+uniform vec4 uRipple[4];    // image uv, start time, strength
 
 const vec3 ABYSS = vec3(0.012, 0.032, 0.047);
 const vec3 DEEP  = vec3(0.016, 0.075, 0.09);
@@ -135,16 +152,53 @@ void main() {
   uv -= uPar * (d - 0.4) * vec2(0.022, 0.012);
 
   float t = uTime * uMotion;
+
+  // Click ripples travelling across the water.
+  float rippleLight = 0.0;
+  for (int i = 0; i < 4; i++) {
+    vec4 rp = uRipple[i];
+    float age = uTime - rp.z;
+    if (rp.w > 0.0 && age > 0.0 && age < 4.0) {
+      vec2 dv = uv - rp.xy;
+      dv.x *= uImgAspect;
+      float dist = length(dv);
+      float front = age * 0.16;
+      float band = exp(-pow((dist - front) * 38.0, 2.0));
+      float w = sin((dist - front) * 160.0) * band * exp(-age * 0.9) * rp.w;
+      uv += normalize(dv + 1e-5) * w * 0.0035 * vec2(1.0 / uImgAspect, 1.0);
+      rippleLight += band * exp(-age * 1.1) * rp.w;
+    }
+  }
   float below = smoothstep(uWater + 0.004, uWater + 0.03, uv.y);
   float surface = smoothstep(uHorizon - 0.01, uHorizon + 0.04, uv.y) * (1.0 - smoothstep(uWater - 0.012, uWater, uv.y));
 
   // Surface shimmer above the waterline, refraction beneath it.
   uv.x += surface * (sin(uv.y * 260.0 + t * 1.6) * 0.0009 + sin(uv.y * 90.0 - t * 0.9) * 0.0006);
   uv.y += surface * sin(uv.x * 120.0 + t * 1.1) * 0.0005;
-  uv += below * vec2(sin(uv.y * 38.0 + t * 0.8), cos(uv.x * 32.0 + t * 0.65)) * 0.0021;
+  uv += below * vec2(sin(uv.y * 38.0 + t * 0.8), cos(uv.x * 32.0 + t * 0.65)) * (0.0021 + uFlow * 0.004);
 
   vec2 suv = clamp(uv, vec2(0.0015), vec2(0.9985));
-  vec3 col = texture2D(uTex, suv).rgb;
+  // Chromatic fringing towards the frame edges (stronger underwater).
+  vec2 q0 = vUv - 0.5;
+  vec2 ca = q0 * dot(q0, q0) * (0.004 + below * 0.006 + uFlow * 0.008);
+  vec3 col = vec3(
+    texture2D(uTex, clamp(suv + ca, 0.0015, 0.9985)).r,
+    texture2D(uTex, suv).g,
+    texture2D(uTex, clamp(suv - ca, 0.0015, 0.9985)).b);
+
+  // Depth of field: a disc blur whose radius grows with distance from the focal plane.
+  float coc = uDof * abs(d - uFocus) * 0.0065 / uCam.z;
+  if (coc > 0.0004) {
+    vec3 acc = col;
+    float ga = 2.39996;
+    for (int i = 1; i < 10; i++) {
+      float fi = float(i);
+      float rr = sqrt(fi / 9.0) * coc;
+      vec2 o = vec2(cos(fi * ga), sin(fi * ga)) * rr * vec2(1.0 / uImgAspect, 1.0);
+      acc += texture2D(uTex, clamp(suv + o, 0.0015, 0.9985)).rgb;
+    }
+    col = acc / 10.0;
+  }
 
   // Past the bottom of the art the hull dissolves into the abyss.
   col = mix(col, ABYSS, smoothstep(0.88, 1.06, uv.y));
@@ -182,9 +236,25 @@ void main() {
   float glint = exp(-abs(uv.y - wl) * 1100.0) * (0.55 + 0.45 * sin(uv.x * 160.0 - t * 2.2));
   col += vec3(0.62, 0.85, 0.95) * glint * 0.3;
 
+  // Ripple crests catch the light.
+  col += vec3(0.55, 0.8, 0.9) * rippleLight * 0.08;
+
   // Descent: colour falls away to the deep, then the abyss.
   col = mix(col, DEEP * (0.6 + lum), smoothstep(0.15, 0.7, uDive) * 0.45 * under);
-  col = mix(col, ABYSS, smoothstep(0.55, 1.0, uDive) * 0.75);
+  col = mix(col, ABYSS, smoothstep(0.55, 1.0, uDive) * 0.72);
+
+  // Lantern: a soft pool of light that follows the pointer underwater,
+  // pulling detail out of the hull without changing the scene's palette.
+  vec2 lq = (vUv - uLantern.xy) * vec2(aspect, 1.0);
+  float pool = exp(-dot(lq, lq) * 9.0);
+  float lit = uLantern.z * pool * max(under, step(0.5, uDive));
+  vec3 base = texture2D(uTex, suv).rgb;
+  col += (base * vec3(0.9, 1.25, 1.3) * 1.6 + vec3(0.02, 0.06, 0.07)) * lit * (0.35 + uDive * 0.65);
+
+  // The golden spine breathes.
+  float pulse = 0.65 + 0.35 * sin(uTime * 2.4);
+  float gold = texture2D(uBloom, suv).r * step(uv.y, 1.02);
+  col += vec3(1.0, 0.72, 0.32) * gold * uGlow * pulse * (0.3 + uDive * 0.9);
 
   // Lens: vignette, grain, exposure.
   vec2 q = vUv - 0.5;
@@ -202,6 +272,7 @@ uniform vec2 uPar;
 uniform vec3 uCam;
 uniform float uDpr;
 uniform float uDive;
+uniform float uTravel;    // accumulated camera travel (scroll) — near particles move more
 varying float vAlpha;
 varying float vKind;
 varying float vBlur;
@@ -209,10 +280,9 @@ void main() {
   float z = mix(0.6, 4.2, aSeed.z);             // distance from camera
   float bubble = step(0.9, aSeed.w);
   float speed = mix(0.006, 0.02, fract(aSeed.w * 7.31)) + bubble * 0.07;
-  float y = fract(aSeed.y + uTime * speed) * 2.4 - 1.2;
+  // camera travel: deeper → particles stream upward past the lens, nearest fastest
+  float y = fract(aSeed.y + uTime * speed + uTravel * 0.7 / z) * 2.4 - 1.2;
   float x = aSeed.x * 1.6 + sin(uTime * 0.3 + aSeed.w * 40.0) * (0.03 + bubble * 0.02);
-  // camera travel: deeper → particles stream upward past the lens
-  y += uCam.y * 1.6 / z;
   vec2 par = uPar * vec2(0.09, 0.05) / z;
   vec2 ndc = vec2((x - par.x) / z * 1.7 / uAspect, (y + par.y) / z * 1.7);
   ndc *= uCam.z;
@@ -265,9 +335,42 @@ type Uniforms = Record<string, WebGLUniformLocation | null>;
 const locate = (gl: WebGLRenderingContext, p: WebGLProgram, names: string[]): Uniforms =>
   Object.fromEntries(names.map((n) => [n, gl.getUniformLocation(p, n)]));
 
+interface Frame { aspect: number; fit: [number, number]; cx: number; cy: number; zoom: number; roll: number; par: [number, number] }
+
+/** Bakes a soft mask of the art's gold vertebrae, used for the spine glow. */
+function bakeGoldMask(img: HTMLImageElement) {
+  const w = 320;
+  const h = Math.round((w * img.naturalHeight) / img.naturalWidth);
+  const a = document.createElement('canvas');
+  a.width = w; a.height = h;
+  const ctx = a.getContext('2d', { willReadFrequently: true })!;
+  ctx.drawImage(img, 0, 0, w, h);
+  const data = ctx.getImageData(0, 0, w, h);
+  const px = data.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const r = px[i] / 255, g = px[i + 1] / 255, b = px[i + 2] / 255;
+    const warm = Math.max(0, (r - b) * 2.4 - 0.25) * Math.min(1, Math.max(0, (r - 0.28) * 3)) * (g > b ? 1 : 0);
+    const v = Math.min(255, warm * 255);
+    px[i] = px[i + 1] = px[i + 2] = v;
+    px[i + 3] = 255;
+  }
+  ctx.putImageData(data, 0, 0);
+  const out = document.createElement('canvas');
+  out.width = w; out.height = h;
+  const o = out.getContext('2d')!;
+  o.filter = 'blur(5px)';
+  o.drawImage(a, 0, 0);
+  o.filter = 'none';
+  o.globalCompositeOperation = 'lighter';
+  o.globalAlpha = 0.5;
+  o.drawImage(a, 0, 0);
+  return out;
+}
+
 export class OceanScene {
   readonly state: SceneState = {
     camX: 0, camY: 0, zoom: 1.04, roll: 0, exposure: 0, dive: 0, pointerX: 0, pointerY: 0,
+    focus: 0.95, dof: 0, lantern: 0, glow: 0, velocity: 0,
   };
 
   private gl: WebGLRenderingContext;
@@ -279,13 +382,21 @@ export class OceanScene {
   private ptsBuf: WebGLBuffer;
   private count: number;
   private tex: WebGLTexture | null = null;
+  private bloom: WebGLTexture | null = null;
   private art: ArtProfile | null = null;
   private imgAspect = 16 / 9;
   private raf = 0;
   private running = false;
   private start = performance.now();
+  private last = performance.now();
   private target = { x: 0, y: 0 };
+  private lamp = { x: 0.5, y: 0.6, tx: 0.5, ty: 0.6, on: 0, ton: 0 };
+  private ripples = new Float32Array(16);
+  private rippleIndex = 0;
+  private travel = 0;
+  private flow = 0;
   private dpr = 1;
+  private frame: Frame | null = null;
 
   constructor(private canvas: HTMLCanvasElement, private motion = true) {
     const gl = canvas.getContext('webgl', { antialias: false, alpha: false, powerPreference: 'high-performance' });
@@ -294,16 +405,17 @@ export class OceanScene {
 
     this.quad = program(gl, VERT_QUAD, FRAG_QUAD);
     this.uq = locate(gl, this.quad, ['uTex', 'uRes', 'uImgAspect', 'uTime', 'uCam', 'uRoll', 'uPar', 'uExposure',
-      'uDive', 'uWater', 'uHorizon', 'uObjA', 'uObjB', 'uMotion']);
+      'uDive', 'uWater', 'uHorizon', 'uObjA', 'uObjB', 'uMotion', 'uBloom', 'uFocus', 'uDof', 'uLantern', 'uGlow',
+      'uFlow', 'uRipple']);
     this.pts = program(gl, VERT_PTS, FRAG_PTS);
-    this.up = locate(gl, this.pts, ['uTime', 'uAspect', 'uPar', 'uCam', 'uDpr', 'uDive', 'uWaterScreen', 'uRes', 'uExp']);
+    this.up = locate(gl, this.pts, ['uTime', 'uAspect', 'uPar', 'uCam', 'uDpr', 'uDive', 'uWaterScreen', 'uRes', 'uExp', 'uTravel']);
 
     this.quadBuf = gl.createBuffer()!;
     gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuf);
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
 
     const small = Math.min(window.innerWidth, window.innerHeight) < 700;
-    this.count = motion ? (small ? 160 : 420) : 0;
+    this.count = motion ? (small ? 170 : 460) : 0;
     const seeds = new Float32Array(this.count * 4);
     for (let i = 0; i < this.count; i++) {
       seeds.set([Math.random() * 2 - 1, Math.random(), Math.random() ** 0.7, Math.random()], i * 4);
@@ -313,6 +425,19 @@ export class OceanScene {
     gl.bufferData(gl.ARRAY_BUFFER, seeds, gl.STATIC_DRAW);
 
     window.addEventListener('pointermove', this.onPointer, { passive: true });
+    document.documentElement.addEventListener('pointerleave', this.onLeave);
+  }
+
+  private upload(source: TexImageSource, format: number) {
+    const gl = this.gl;
+    const t = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, t);
+    gl.texImage2D(gl.TEXTURE_2D, 0, format, format, gl.UNSIGNED_BYTE, source);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    return t;
   }
 
   /** Loads (or swaps) the artwork; resolves once it is on the GPU. */
@@ -326,13 +451,13 @@ export class OceanScene {
         if (this.art !== art) return resolve();
         const gl = this.gl;
         if (this.tex) gl.deleteTexture(this.tex);
-        this.tex = gl.createTexture();
-        gl.bindTexture(gl.TEXTURE_2D, this.tex);
-        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, img);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
-        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        if (this.bloom) gl.deleteTexture(this.bloom);
+        this.tex = this.upload(img, gl.RGB);
+        try {
+          this.bloom = this.upload(bakeGoldMask(img), gl.RGB);
+        } catch {
+          this.bloom = this.upload(new ImageData(1, 1), gl.RGB);
+        }
         this.imgAspect = img.naturalWidth / img.naturalHeight;
         this.render();
         resolve();
@@ -356,6 +481,7 @@ export class OceanScene {
   play() {
     if (this.running) return;
     this.running = true;
+    this.last = performance.now();
     const loop = () => {
       if (!this.running) return;
       this.render();
@@ -372,56 +498,116 @@ export class OceanScene {
   destroy() {
     this.pause();
     window.removeEventListener('pointermove', this.onPointer);
+    document.documentElement.removeEventListener('pointerleave', this.onLeave);
     this.gl.getExtension('WEBGL_lose_context')?.loseContext();
+  }
+
+  /** Sends a ripple across the water from a point on screen (client px). */
+  ripple(clientX: number, clientY: number, strength = 1) {
+    if (!this.motion) return;
+    const [u, v] = this.screenToImage(clientX / window.innerWidth, clientY / window.innerHeight);
+    const i = (this.rippleIndex++ % 4) * 4;
+    this.ripples.set([u, v, (performance.now() - this.start) / 1000, strength], i);
+  }
+
+  /** Image uv → viewport fraction (0…1, y from the top). `depth` applies the same parallax as the shader. */
+  imageToScreen(u: number, v: number, depth = 0.95): [number, number] {
+    const f = this.frame;
+    if (!f) return [u, v];
+    const ux = u + f.par[0] * (depth - 0.4) * 0.022;
+    const uy = v + f.par[1] * (depth - 0.4) * 0.012;
+    let px = ((ux - f.cx) * f.zoom) / f.fit[0];
+    const py = ((uy - f.cy) * f.zoom) / f.fit[1];
+    px *= f.aspect;
+    const c = Math.cos(f.roll), s = Math.sin(f.roll);
+    const sx = c * px - s * py;
+    const sy = s * px + c * py;
+    return [sx / f.aspect + 0.5, sy + 0.5];
+  }
+
+  screenToImage(x: number, y: number): [number, number] {
+    const f = this.frame;
+    if (!f) return [x, y];
+    const px = (x - 0.5) * f.aspect, py = y - 0.5;
+    const c = Math.cos(f.roll), s = Math.sin(f.roll);
+    const rx = (c * px + s * py) / f.aspect;
+    const ry = -s * px + c * py;
+    return [f.cx + (rx * f.fit[0]) / f.zoom, f.cy + (ry * f.fit[1]) / f.zoom];
   }
 
   /** Waterline position on screen (0 = top, 1 = bottom), for DOM overlays. */
   waterlineOnScreen() {
     if (!this.art) return 0.5;
-    const { width, height } = this.canvas;
-    const aspect = width / Math.max(height, 1);
-    const fitY = aspect > this.imgAspect ? this.imgAspect / aspect : 1;
-    const s = this.state;
-    const zoom = s.zoom * 1.025;
-    const halfY = (0.5 * fitY) / zoom;
-    const cy = Math.max(0.5 + s.camY, halfY);
-    return 0.5 + ((this.art.water - cy) * zoom) / fitY;
+    return this.imageToScreen(0.5, this.art.water, 0.4)[1];
   }
 
   private onPointer = (e: PointerEvent) => {
+    this.lamp.tx = e.clientX / window.innerWidth;
+    this.lamp.ty = e.clientY / window.innerHeight;
+    this.lamp.ton = 1;
     if (e.pointerType !== 'mouse') return;
-    this.target.x = (e.clientX / window.innerWidth) * 2 - 1;
-    this.target.y = (e.clientY / window.innerHeight) * 2 - 1;
+    this.target.x = this.lamp.tx * 2 - 1;
+    this.target.y = this.lamp.ty * 2 - 1;
   };
+
+  private onLeave = () => {
+    this.lamp.ton = 0;
+    this.target.x = 0;
+    this.target.y = 0;
+  };
+
+  private computeFrame(time: number): Frame {
+    const s = this.state;
+    const m = this.motion ? 1 : 0;
+    const aspect = this.canvas.width / Math.max(this.canvas.height, 1);
+    const fit: [number, number] = aspect > this.imgAspect ? [1, this.imgAspect / aspect] : [aspect / this.imgAspect, 1];
+    // Slow "camera on a boat" drift, layered under whatever GSAP is doing.
+    const zoom = s.zoom * 1.025;
+    const hx = (0.5 * fit[0]) / zoom, hy = (0.5 * fit[1]) / zoom;
+    const cx = Math.min(Math.max(0.5 + s.camX + Math.sin(time * 0.071) * 0.006 * m, hx), 1 - hx);
+    const cy = Math.max(0.5 + s.camY + Math.sin(time * 0.093 + 1.2) * 0.004 * m, hy);
+    const roll = s.roll + Math.sin(time * 0.37) * 0.0035 * m;
+    const par: [number, number] = [s.pointerX + Math.sin(time * 0.11) * 0.25 * m, s.pointerY + Math.cos(time * 0.13) * 0.15 * m];
+    return { aspect, fit, cx, cy, zoom, roll, par };
+  }
 
   private render() {
     const gl = this.gl;
     if (!this.tex || !this.art) return;
     const s = this.state;
-    const time = (performance.now() - this.start) / 1000;
+    const now = performance.now();
+    const time = (now - this.start) / 1000;
+    const dt = Math.min(0.1, (now - this.last) / 1000);
+    this.last = now;
     const m = this.motion ? 1 : 0;
 
     s.pointerX += (this.target.x - s.pointerX) * 0.04;
     s.pointerY += (this.target.y - s.pointerY) * 0.04;
-    // Slow "camera on a boat" drift, layered under whatever GSAP is doing.
-    const driftX = Math.sin(time * 0.071) * 0.006 * m;
-    const driftY = Math.sin(time * 0.093 + 1.2) * 0.004 * m;
-    const sway = Math.sin(time * 0.37) * 0.0035 * m;
-    const par: [number, number] = [s.pointerX + Math.sin(time * 0.11) * 0.25 * m, s.pointerY + Math.cos(time * 0.13) * 0.15 * m];
+    const l = this.lamp;
+    l.x += (l.tx - l.x) * 0.08;
+    l.y += (l.ty - l.y) * 0.08;
+    l.on += (l.ton - l.on) * 0.05;
+    this.flow += (Math.min(1, Math.abs(s.velocity) * 0.35) - this.flow) * 0.08;
+    this.travel += (s.velocity * 0.06 + 0.004) * dt * m;
+
+    const f = (this.frame = this.computeFrame(time));
 
     gl.viewport(0, 0, this.canvas.width, this.canvas.height);
     gl.disable(gl.BLEND);
     gl.useProgram(this.quad);
     gl.activeTexture(gl.TEXTURE0);
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
+    gl.activeTexture(gl.TEXTURE1);
+    gl.bindTexture(gl.TEXTURE_2D, this.bloom);
     const u = this.uq;
     gl.uniform1i(u.uTex, 0);
+    gl.uniform1i(u.uBloom, 1);
     gl.uniform2f(u.uRes, this.canvas.width, this.canvas.height);
     gl.uniform1f(u.uImgAspect, this.imgAspect);
     gl.uniform1f(u.uTime, time);
-    gl.uniform3f(u.uCam, s.camX + driftX, s.camY + driftY, s.zoom * 1.025);
-    gl.uniform1f(u.uRoll, s.roll + sway);
-    gl.uniform2f(u.uPar, par[0], par[1]);
+    gl.uniform3f(u.uCam, f.cx - 0.5, f.cy - 0.5, f.zoom);
+    gl.uniform1f(u.uRoll, f.roll);
+    gl.uniform2f(u.uPar, f.par[0], f.par[1]);
     gl.uniform1f(u.uExposure, s.exposure);
     gl.uniform1f(u.uDive, s.dive);
     gl.uniform1f(u.uWater, this.art.water);
@@ -429,6 +615,12 @@ export class OceanScene {
     gl.uniform4f(u.uObjA, ...this.art.objA);
     gl.uniform3f(u.uObjB, ...this.art.objB);
     gl.uniform1f(u.uMotion, m);
+    gl.uniform1f(u.uFocus, s.focus);
+    gl.uniform1f(u.uDof, s.dof);
+    gl.uniform3f(u.uLantern, l.x, l.y, s.lantern * l.on * m);
+    gl.uniform1f(u.uGlow, s.glow);
+    gl.uniform1f(u.uFlow, this.flow * m);
+    gl.uniform4fv(u.uRipple, this.ripples);
     const aq = gl.getAttribLocation(this.quad, 'aPos');
     gl.bindBuffer(gl.ARRAY_BUFFER, this.quadBuf);
     gl.enableVertexAttribArray(aq);
@@ -442,14 +634,15 @@ export class OceanScene {
     gl.useProgram(this.pts);
     const p = this.up;
     gl.uniform1f(p.uTime, time);
-    gl.uniform1f(p.uAspect, this.canvas.width / Math.max(this.canvas.height, 1));
-    gl.uniform2f(p.uPar, par[0], par[1]);
+    gl.uniform1f(p.uAspect, f.aspect);
+    gl.uniform2f(p.uPar, f.par[0], f.par[1]);
     gl.uniform3f(p.uCam, s.camX, s.camY, s.zoom);
     gl.uniform1f(p.uDpr, this.dpr);
     gl.uniform1f(p.uDive, s.dive);
     gl.uniform1f(p.uWaterScreen, this.waterlineOnScreen());
     gl.uniform2f(p.uRes, this.canvas.width, this.canvas.height);
     gl.uniform1f(p.uExp, s.exposure);
+    gl.uniform1f(p.uTravel, this.travel + s.camY);
     const ap = gl.getAttribLocation(this.pts, 'aSeed');
     gl.bindBuffer(gl.ARRAY_BUFFER, this.ptsBuf);
     gl.enableVertexAttribArray(ap);

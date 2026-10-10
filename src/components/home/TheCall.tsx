@@ -1,4 +1,5 @@
 import { event } from '../../event.config';
+import Hud from './Hud';
 
 // `count` values tick up when they scroll into view.
 const stats = [
@@ -11,21 +12,23 @@ const stats = [
 export default function TheCall() {
   return (
     <section id="about" className="section call">
-      <div className="section__head" data-reveal>
-        <p className="eyebrow">Chapter I — The Call</p>
-        <h2 className="display" data-track>The Voyage Begins</h2>
+      <span className="ghost" data-speed="0.75" aria-hidden="true">I</span>
+      <div className="section__head">
+        <Hud index="Chapter I" name="The Call" />
+        <h2 className="display" data-split>The Voyage Begins</h2>
       </div>
       <div className="call__body">
-        <p className="lede" data-reveal>
+        <p className="lede" data-lines>
           Welcome to {event.name} {event.edition}, organised by the Computer Society of India (CSI) student
           chapter of K. J. Somaiya Institute of Technology (KJSIT). Like Odysseus, every crew sets out into the unknown — with
           nothing but their wits, their code and each other — and must find their way home.
         </p>
-        <p className="muted" data-reveal>{event.perk}</p>
+        <p className="call__perk" data-reveal><span className="call__perk-mark" aria-hidden="true" />{event.perk}</p>
       </div>
       <dl className="stats">
+        <span className="stats__rule" aria-hidden="true" />
         {stats.map((s) => (
-          <div className="stat" key={s.label} data-reveal>
+          <div className="stat" key={s.label}>
             <dt>{s.label}</dt>
             <dd>
               {s.prefix}

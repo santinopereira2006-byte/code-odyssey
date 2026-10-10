@@ -54,10 +54,12 @@ export default function Loader({ ready, quick, reducedMotion, onReveal, onDone }
       .to(q('.loader__status'), { opacity: 0, letterSpacing: '0.7em', duration: 0.5 }, '<')
       .to(q('.loader__ring'), { scale: 0.08, opacity: 0, duration: 0.7, ease: 'back.in(2)' }, '<0.1')
       .fromTo(q('.loader__line'), { scaleX: 0, opacity: 1 }, { scaleX: 1, duration: 0.9, ease: 'expo.out' }, '-=0.25')
+      .fromTo(q('.loader__flare'), { scaleX: 0.1, opacity: 0 }, { scaleX: 1, opacity: 1, duration: 0.7, ease: 'power2.out' }, '<0.1')
       .add(() => cbs.current.onReveal(), '-=0.35')
       .to(q('.loader__shutter--top'), { yPercent: -100, duration: 1.5, ease: 'expo.inOut' }, '-=0.35')
       .to(q('.loader__shutter--bottom'), { yPercent: 100, duration: 1.5, ease: 'expo.inOut' }, '<')
-      .to(q('.loader__line'), { scaleY: 18, opacity: 0, duration: 1.1, ease: 'power2.out' }, '<0.25');
+      .to(q('.loader__line'), { scaleY: 18, opacity: 0, duration: 1.1, ease: 'power2.out' }, '<0.25')
+      .to(q('.loader__flare'), { scaleX: 1.6, opacity: 0, duration: 1.2, ease: 'power2.out' }, '<');
   };
 
   // Entrance: letters surface one by one out of the dark.
@@ -99,6 +101,7 @@ export default function Loader({ ready, quick, reducedMotion, onReveal, onDone }
       <div className="loader__shutter loader__shutter--top" />
       <div className="loader__shutter loader__shutter--bottom" />
       <div className="loader__line" aria-hidden="true" />
+      <div className="loader__flare" aria-hidden="true" />
 
       <div className="loader__block" aria-hidden="true">
         <p className="loader__by">A Hackathon by <b>{event.organizer.name}</b></p>

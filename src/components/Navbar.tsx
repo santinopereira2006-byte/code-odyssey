@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { event, navLinks } from '../event.config';
 import Logo from './Logo';
 import RegisterButton from './RegisterButton';
 
-export default function Navbar({ visible = true }: { visible?: boolean }) {
+export default function Navbar({ visible = true, active = '' }: { visible?: boolean; active?: string }) {
   const [scrolled, setScrolled] = useState(false);
   const [open, setOpen] = useState(false);
 
@@ -34,9 +34,17 @@ export default function Navbar({ visible = true }: { visible?: boolean }) {
         </a>
         <nav aria-label="Primary">
           <ul className="nav__links" id="nav-menu">
-            {navLinks.map((l) => (
-              <li key={l.href}>
-                <a href={l.href} onClick={close}>{l.label}</a>
+            {navLinks.map((l, i) => (
+              <li key={l.href} style={{ '--i': i } as CSSProperties}>
+                <a
+                  href={l.href}
+                  onClick={close}
+                  className={l.href === `#${active}` ? 'is-active' : undefined}
+                  aria-current={l.href === `#${active}` ? 'location' : undefined}
+                >
+                  <span className="nav__num" aria-hidden="true">{String(i + 1).padStart(2, '0')}</span>
+                  {l.label}
+                </a>
               </li>
             ))}
             <li className="nav__cta-mobile"><RegisterButton /></li>
@@ -53,6 +61,7 @@ export default function Navbar({ visible = true }: { visible?: boolean }) {
           <span /><span />
         </button>
       </div>
+      <span className="nav__progress" aria-hidden="true" />
     </header>
   );
 }
